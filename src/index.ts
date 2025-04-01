@@ -2,7 +2,14 @@ import { Hono ,Context } from "hono";
 import { getSignal } from "./strategy";
 import { sendTelegramMessage } from "./telegram";
 
-const app = new Hono();
+
+interface Bindings {
+  TELEGRAM_TOKEN: string
+  TELEGRAM_CHAT_ID: string
+}
+
+
+const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/", (c: Context) => c.text("📊 API de Inversión (diaria o semanal)"));
 
