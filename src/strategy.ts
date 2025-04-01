@@ -25,11 +25,6 @@ export async function getHistoricalData(symbol: string, interval: string): Promi
 
   // Ensure correct symbol format and common symbol fixes
   let normalizedSymbol = symbol.toUpperCase().trim();
-  // Fix common symbol mistakes
-  const symbolMap: { [key: string]: string } = {
-    'APPL': 'AAPL',  // Common typo for Apple Inc.
-  };
-  normalizedSymbol = symbolMap[normalizedSymbol] || normalizedSymbol;
   
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${normalizedSymbol}?interval=${interval}&period1=${period1}&period2=${period2}`;
 
