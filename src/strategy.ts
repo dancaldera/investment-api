@@ -19,9 +19,29 @@ async function waitForRateLimit(): Promise<void> {
 }
 
 export async function getHistoricalData(symbol: string, interval: string): Promise<number[]> {
-  // Calculate period1 as 7 days ago and period2 as current time (matching the curl example)
+  // Calculate time range based on interval
   const period2 = Math.floor(Date.now() / 1000);
-  const period1 = period2 - (7 * 24 * 60 * 60); // 7 days ago
+  
+  // Adjust the time range based on the interval to ensure we get enough data
+  let period1: number;
+  
+  switch (interval) {
+    case "1d":
+      // For daily data, fetch 3 months (90 days)
+      period1 = period2 - (90 * 24 * 60 * 60);
+      break;
+    case "1wk":
+      // For weekly data, fetch 1 year
+      period1 = period2 - (365 * 24 * 60 * 60);
+      break;
+    case "1mo":
+      // For monthly data, fetch 5 years
+      period1 = period2 - (5 * 365 * 24 * 60 * 60);
+      break;
+    default:
+      // Default to 30 days
+      period1 = period2 - (30 * 24 * 60 * 60);
+  }
 
   // Ensure correct symbol format and common symbol fixes
   let normalizedSymbol = symbol.toUpperCase().trim();
@@ -404,6 +424,21 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
     // Fetch historical data
     const data = await getHistoricalData(symbol, interval);
     
+    // Determine minimum data points based on interval
+    const minDataPoints = {
+      "1d": 15,   // 3 weeks of data for daily
+      "1wk": 10,  // 10 weeks for weekly
+      "1mo": 6    // 6 months for monthly
+    };
+    
+    // Get required minimum or default to 10
+    const requiredDataPoints = minDataPoints[interval as keyof typeof minDataPoints] || 10;
+    
+    // Check if we have enough data
+    if (data.length < requiredDataPoints) {
+      return `Datos insuficientes para ${symbol}. Se requieren al menos ${requiredDataPoints} puntos de datos para intervalo ${interval}.`;
+    }
+    
     // Simulate OHLC data (since we only have closing prices)
     // This is a limitation of our current data; in a real system we'd have full OHLC
     const high = data.map((price, i) => price * (1 + 0.01 * Math.random()));
@@ -610,28 +645,79 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
     // Technical indicator summaries
     detailedAnalysis += `\n🔍 ANÁLISIS TÉCNICO para ${symbol}:\n`;
     detailedAnalysis += `• Precio actual: $${data[i].toFixed(2)}\n`;
-    detailedAnalysis += `• Tendencia: ${smaShort[i] > smaLong[i] ? "✅ Alcista" : "❌ Bajista"}\n`;
-    detailedAnalysis += `• RSI(14): ${rsi[i].toFixed(2)} ${rsi[i] > 70 ? "⚠️ Sobrecomprado" : rsi[i] < 30 ? "⚠️ Sobrevendido" : "✅ Neutral"}\n`;
-    detailedAnalysis += `• MACD: ${macdData.macd[i] > macdData.signal[i] ? "✅ Bullish" : "❌ Bearish"}\n`;
-    detailedAnalysis += `• Bandas de Bollinger: ${data[i] > bollingerBands.upper[i] ? "⚠️ Sobrecomprado" : data[i] < bollingerBands.lower[i] ? "⚠️ Sobrevendido" : "✅ Dentro de bandas"}\n`;
     
-    // Signal strength
+    // Only include indicators that have valid values
+    if (!isNaN(smaShort[i]) && !isNaN(smaLong[i])) {
+      detailedAnalysis += `• Tendencia: ${smaShort[i] > smaLong[i] ? "✅ Alcista" : "❌ Bajista"}\n`;
+    }
+    
+    if (!isNaN(rsi[i])) {
+      detailedAnalysis += `• RSI(14): ${rsi[i].toFixed(2)} ${rsi[i] > 70 ? "⚠️ Sobrecomprado" : rsi[i] < 30 ? "⚠️ Sobrevendido" : "✅ Neutral"}\n`;
+    } else {
+      detailedAnalysis += `• RSI(14): No disponible\n`;
+    }
+    
+    if (!isNaN(macdData.macd[i]) && !isNaN(macdData.signal[i])) {
+      detailedAnalysis += `• MACD: ${macdData.macd[i] > macdData.signal[i] ? "✅ Bullish" : "❌ Bearish"}\n`;
+    } else {
+      detailedAnalysis += `• MACD: No disponible\n`;
+    }
+    
+    if (!isNaN(bollingerBands.upper[i]) && !isNaN(bollingerBands.lower[i])) {
+      detailedAnalysis += `• Bandas de Bollinger: ${data[i] > bollingerBands.upper[i] ? "⚠️ Sobrecomprado" : data[i] < bollingerBands.lower[i] ? "⚠️ Sobrevendido" : "✅ Dentro de bandas"}\n`;
+    }
+    
+    // Signal strength - ensure values make sense
     const totalStrength = Math.max(bullishSignals, bearishSignals);
     const confidenceLevel = totalStrength >= 70 ? "ALTA" : totalStrength >= 40 ? "MEDIA" : "BAJA";
     
-    // Generate signal text
+    // Generate signal text - ensure consistency with indicator values
     let signal = "";
-    if (bullishSignals > bearishSignals + 10) {
-      if (bullishSignals > 70) {
-        signal = `🚨 Señal FUERTE de COMPRA para ${symbol} (${interval})`;
+    
+    // Make sure we have enough valid indicators before making a recommendation
+    const minIndicatorsNeeded = 3;
+    let validIndicatorsCount = 0;
+    
+    if (!isNaN(smaShort[i]) && !isNaN(smaLong[i])) validIndicatorsCount++;
+    if (!isNaN(rsi[i])) validIndicatorsCount++;
+    if (!isNaN(macdData.macd[i]) && !isNaN(macdData.signal[i])) validIndicatorsCount++;
+    if (!isNaN(bollingerBands.upper[i]) && !isNaN(bollingerBands.lower[i])) validIndicatorsCount++;
+    if (!isNaN(adxData.adx[i])) validIndicatorsCount++;
+    
+    if (validIndicatorsCount < minIndicatorsNeeded) {
+      signal = `⚠️ Datos insuficientes para ${symbol} (${interval}) - Se necesitan más indicadores para un análisis confiable`;
+    }
+    else if (bullishSignals > bearishSignals + 10) {
+      // Make sure the bullish signal aligns with the key indicators
+      const isTrendBullish = smaShort[i] > smaLong[i];
+      const isMACDBullish = macdData.macd[i] > macdData.signal[i];
+      
+      // Require at least one key indicator to confirm the bullish signal
+      if (isTrendBullish || isMACDBullish || (rsi[i] < 50 && !isNaN(rsi[i]))) {
+        if (bullishSignals > 70) {
+          signal = `🚨 Señal FUERTE de COMPRA para ${symbol} (${interval})`;
+        } else {
+          signal = `📈 Señal de COMPRA para ${symbol} (${interval})`;
+        }
       } else {
-        signal = `📈 Señal de COMPRA para ${symbol} (${interval})`;
+        // Mixed signals - bullish score is high but key indicators are bearish
+        signal = `⚠️ Señales mixtas para ${symbol} (${interval}) - Considerar con cautela`;
       }
     } else if (bearishSignals > bullishSignals + 10) {
-      if (bearishSignals > 70) {
-        signal = `🚨 Señal FUERTE de VENTA para ${symbol} (${interval})`;
+      // Make sure the bearish signal aligns with the key indicators
+      const isTrendBearish = smaShort[i] < smaLong[i];
+      const isMACDBearish = macdData.macd[i] < macdData.signal[i];
+      
+      // Require at least one key indicator to confirm the bearish signal
+      if (isTrendBearish || isMACDBearish || (rsi[i] > 50 && !isNaN(rsi[i]))) {
+        if (bearishSignals > 70) {
+          signal = `🚨 Señal FUERTE de VENTA para ${symbol} (${interval})`;
+        } else {
+          signal = `📉 Señal de VENTA para ${symbol} (${interval})`;
+        }
       } else {
-        signal = `📉 Señal de VENTA para ${symbol} (${interval})`;
+        // Mixed signals - bearish score is high but key indicators are bullish
+        signal = `⚠️ Señales mixtas para ${symbol} (${interval}) - Considerar con cautela`;
       }
     } else {
       signal = `🔄 Sin señal clara para ${symbol} (${interval})`;
