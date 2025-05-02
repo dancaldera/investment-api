@@ -138,35 +138,6 @@ export function calculateRSI(data: number[], period = 14): number[] {
   return rsi;
 }
 
-export function calculateMACD(data: number[]): { macd: number[], signal: number[], histogram: number[] } {
-  const ema12 = calculateEMA(data, 12);
-  const ema26 = calculateEMA(data, 26);
-  const macd: number[] = [];
-  
-  // Calculate MACD line (EMA12 - EMA26)
-  for (let i = 0; i < data.length; i++) {
-    if (isNaN(ema12[i]) || isNaN(ema26[i])) {
-      macd.push(NaN);
-    } else {
-      macd.push(ema12[i] - ema26[i]);
-    }
-  }
-  
-  // Calculate signal line (9-day EMA of MACD)
-  const signal = calculateEMA(macd, 9);
-  
-  // Calculate histogram (MACD - signal)
-  const histogram: number[] = [];
-  for (let i = 0; i < macd.length; i++) {
-    if (isNaN(macd[i]) || isNaN(signal[i])) {
-      histogram.push(NaN);
-    } else {
-      histogram.push(macd[i] - signal[i]);
-    }
-  }
-  
-  return { macd, signal, histogram };
-}
 
 export function calculateEMA(data: number[], period: number): number[] {
   const ema: number[] = [];
@@ -450,7 +421,6 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
     const smaLong = interval === "1d" ? calculateSMA(data, 200) : calculateSMA(data, 30);
     const ema20 = calculateEMA(data, 20);
     const rsi = calculateRSI(data, 14);
-    const macdData = calculateMACD(data);
     const bollingerBands = calculateBollingerBands(data, 20, 2);
     const adxData = calculateADX(high, low, data, 14);
     const patterns = identifyPatterns(open, high, low, data);
@@ -465,10 +435,9 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
     
     // Weight factors (sum should be 100)
     const weights = {
-      trend: 30,       // Trend following (SMA crossover)
-      momentum: 15,    // Momentum (RSI)
-      volatility: 10,  // Volatility (Bollinger Bands)
-      macd: 15,        // MACD crossover and histogram
+      trend: 35,       // Trend following (SMA crossover)
+      momentum: 20,    // Momentum (RSI)
+      volatility: 15,  // Volatility (Bollinger Bands)
       adx: 10,         // ADX trend strength
       patterns: 20     // Candlestick patterns
     };
@@ -567,41 +536,8 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
       }
     }
     
-    // === 4. MACD Analysis ===
-    if (!isNaN(macdData.macd[i]) && !isNaN(macdData.signal[i])) {
-      totalSignals += weights.macd;
-      
-      // MACD line crossing above signal line (bullish)
-      if (i > 0 && macdData.macd[i] > macdData.signal[i] && macdData.macd[i-1] <= macdData.signal[i-1]) {
-        bullishSignals += weights.macd * 0.9;
-      }
-      // MACD line crossing below signal line (bearish)
-      else if (i > 0 && macdData.macd[i] < macdData.signal[i] && macdData.macd[i-1] >= macdData.signal[i-1]) {
-        bearishSignals += weights.macd * 0.9;
-      }
-      // MACD and signal both above zero (bullish trend)
-      else if (macdData.macd[i] > 0 && macdData.signal[i] > 0) {
-        bullishSignals += weights.macd * 0.5;
-      }
-      // MACD and signal both below zero (bearish trend)
-      else if (macdData.macd[i] < 0 && macdData.signal[i] < 0) {
-        bearishSignals += weights.macd * 0.5;
-      }
-      
-      // MACD histogram analysis (momentum)
-      if (i > 0 && !isNaN(macdData.histogram[i])) {
-        // Increasing positive histogram (strong bullish momentum)
-        if (macdData.histogram[i] > 0 && macdData.histogram[i] > macdData.histogram[i-1]) {
-          bullishSignals += weights.macd * 0.3;
-        }
-        // Increasing negative histogram (strong bearish momentum)
-        else if (macdData.histogram[i] < 0 && macdData.histogram[i] < macdData.histogram[i-1]) {
-          bearishSignals += weights.macd * 0.3;
-        }
-      }
-    }
     
-    // === 5. ADX Analysis (Trend Strength) ===
+    // === 4. ADX Analysis (Trend Strength) ===
     if (!isNaN(adxData.adx[i]) && !isNaN(adxData.pdi[i]) && !isNaN(adxData.ndi[i])) {
       totalSignals += weights.adx;
       
@@ -620,7 +556,7 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
       }
     }
     
-    // === 6. Candlestick Pattern Analysis ===
+    // === 5. Candlestick Pattern Analysis ===
     if (patterns.bullish[i] || patterns.bearish[i]) {
       totalSignals += weights.patterns;
       
@@ -657,11 +593,6 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
       detailedAnalysis += `• RSI(14): No disponible\n`;
     }
     
-    if (!isNaN(macdData.macd[i]) && !isNaN(macdData.signal[i])) {
-      detailedAnalysis += `• MACD: ${macdData.macd[i] > macdData.signal[i] ? "✅ Bullish" : "❌ Bearish"}\n`;
-    } else {
-      detailedAnalysis += `• MACD: No disponible\n`;
-    }
     
     if (!isNaN(bollingerBands.upper[i]) && !isNaN(bollingerBands.lower[i])) {
       detailedAnalysis += `• Bandas de Bollinger: ${data[i] > bollingerBands.upper[i] ? "⚠️ Sobrecomprado" : data[i] < bollingerBands.lower[i] ? "⚠️ Sobrevendido" : "✅ Dentro de bandas"}\n`;
@@ -680,7 +611,6 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
     
     if (!isNaN(smaShort[i]) && !isNaN(smaLong[i])) validIndicatorsCount++;
     if (!isNaN(rsi[i])) validIndicatorsCount++;
-    if (!isNaN(macdData.macd[i]) && !isNaN(macdData.signal[i])) validIndicatorsCount++;
     if (!isNaN(bollingerBands.upper[i]) && !isNaN(bollingerBands.lower[i])) validIndicatorsCount++;
     if (!isNaN(adxData.adx[i])) validIndicatorsCount++;
     
@@ -690,10 +620,9 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
     else if (bullishSignals > bearishSignals + 10) {
       // Make sure the bullish signal aligns with the key indicators
       const isTrendBullish = smaShort[i] > smaLong[i];
-      const isMACDBullish = macdData.macd[i] > macdData.signal[i];
       
       // Require at least one key indicator to confirm the bullish signal
-      if (isTrendBullish || isMACDBullish || (rsi[i] < 50 && !isNaN(rsi[i]))) {
+      if (isTrendBullish || (rsi[i] < 50 && !isNaN(rsi[i]))) {
         if (bullishSignals > 70) {
           signal = `🚨 Señal FUERTE de COMPRA para ${symbol} (${interval})`;
         } else {
@@ -706,10 +635,9 @@ export async function getSignal(symbol: string, interval: string): Promise<strin
     } else if (bearishSignals > bullishSignals + 10) {
       // Make sure the bearish signal aligns with the key indicators
       const isTrendBearish = smaShort[i] < smaLong[i];
-      const isMACDBearish = macdData.macd[i] < macdData.signal[i];
       
       // Require at least one key indicator to confirm the bearish signal
-      if (isTrendBearish || isMACDBearish || (rsi[i] > 50 && !isNaN(rsi[i]))) {
+      if (isTrendBearish || (rsi[i] > 50 && !isNaN(rsi[i]))) {
         if (bearishSignals > 70) {
           signal = `🚨 Señal FUERTE de VENTA para ${symbol} (${interval})`;
         } else {

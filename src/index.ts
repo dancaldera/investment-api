@@ -6,6 +6,7 @@ const app = new Hono();
 
 app.get("/", (c: Context) => c.text("📊 API de Inversión (diaria o semanal)"));
 
+// curl -X GET "http://localhost:8787/signal/AAPL?interval=1d" -H "X-API-Key: YOUR_API
 app.get("/signal/:symbol", async (c: Context) => {
   // Check for API key in header
   const apiKey = c.req.header("X-API-Key");
