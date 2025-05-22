@@ -149,7 +149,7 @@ export function calculateRSI(data: number[], period = 14): number[] {
       if (change > 0) gains += change;
       else losses -= change;
     }
-    const rs = gains / (losses || 1);
+    const rs = losses === 0 ? 100 : gains === 0 ? 0 : gains / losses;;
     rsi.push(100 - 100 / (1 + rs));
   }
   return rsi;
@@ -203,7 +203,7 @@ export function calculateBollingerBands(
     }
 
     let sum = 0;
-    for (let j = i - period + 1; j <= i; j++) {
+    for (let j = Math.max(0, i - period + 1); j <= i; j++) {
       sum += Math.pow(data[j] - middle[i], 2);
     }
     const sd = Math.sqrt(sum / period);
